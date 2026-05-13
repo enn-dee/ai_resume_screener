@@ -1,32 +1,35 @@
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
-# Load pretrained AI model
+from utils.pdf_extractor import extract_text_from_pdf
+from utils.text_cleaner import clean_text
+
+# Load model
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
-# Sample Job Description
+# Job description
 job_description = """
-Looking for a Python developer with experience in:
-- JAVA
-- REST APIs
-- SQL
-- Backend Development
+Looking for a Python developer with Flask,
+REST API, SQL, and backend development experience.
 """
 
-# Sample Resume
-resume = """
-Software engineer experienced in Python backend systems,
-Flask applications, API development, and database management.
-"""
+# Extract PDF text
+resume_text = extract_text_from_pdf("resumes/resume.pdf")
 
-# Convert text into embeddings
-job_embedding = model.encode([job_description])
-resume_embedding = model.encode([resume])
+# Clean text
+cleaned_resume = clean_text(resume_text)
+cleaned_job = clean_text(job_description)
 
-# Compare similarity
-similarity_score = cosine_similarity(job_embedding, resume_embedding)
+print("\n===== CLEANED RESUME =====\n")
+print(cleaned_resume)
 
-# Convert to percentage
-match_percentage = similarity_score[0][0] * 100
+# Embeddings
+job_embedding = model.encode([cleaned_job])
+resume_embedding = model.encode([cleaned_resume])
 
-print(f"Match Score: {match_percentage:.2f}%")
+# Similarity
+similarity = cosine_similarity(job_embedding, resume_embedding)
+
+match_percentage = similarity[0][0] * 100
+
+print(f"\nMatch Score: {match_percentage:.2f}%")
