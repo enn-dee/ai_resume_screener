@@ -1,6 +1,7 @@
 import os
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
+from werkzeug.utils import secure_filename
 
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -9,44 +10,68 @@ from utils.pdf_extractor import extract_text_from_pdf
 from utils.text_cleaner import clean_text
 from utils.skill_extractor import extract_skills
 
-from flask import Flask
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
 app = Flask(__name__)
+
+UPLOAD_FOLDER = "uploads"
+
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
 
 @app.route("/")
 def home():
     return "AI Resume Screener API Running"
 
-@app.route("/analyze")
+
+@app.route("/analyze", methods=["POST"])
 def analyze_resumes():
 
-    job_description = """
-    Looking for a Python developer with:
-    Flask, SQL, REST APIs, Git
-    """
+    job_description = request.form.get(
+        "job_description"
+    )
 
+    if not job_description:
+        return jsonify({
+            "error": "Job description missing"
+        }), 400
+
+    uploaded_files = request.files.getlist(
+        "resumes"
+    )
+    if len(uploaded_files) == 0:
+        return jsonify({
+            "error": "No resumes uploaded"
+        }), 400
+
+    # Clean job description
     cleaned_job = clean_text(job_description)
 
     job_skills = extract_skills(cleaned_job)
 
+    # Generate job embedding
     job_embedding = model.encode([cleaned_job])
-
-    resume_folder = "resumes"
 
     results = []
 
-    for file_name in os.listdir(resume_folder):
+    for file in uploaded_files:
 
-        if file_name.endswith(".pdf"):
+        if file.filename.endswith(".pdf"):
 
-            pdf_path = os.path.join(
-                resume_folder,
-                file_name
+            # Secure filename
+            filename = secure_filename(
+                file.filename
             )
 
+            save_path = os.path.join(
+                UPLOAD_FOLDER,
+                filename
+            )
+
+            file.save(save_path)
+
             resume_text = extract_text_from_pdf(
-                pdf_path
+                save_path
             )
 
             cleaned_resume = clean_text(
@@ -57,6 +82,7 @@ def analyze_resumes():
                 cleaned_resume
             )
 
+            # Generate resume embedding
             resume_embedding = model.encode(
                 [cleaned_resume]
             )
@@ -87,26 +113,27 @@ def analyze_resumes():
             )
 
             results.append({
-    "resume": file_name,
 
-    "semantic_score": float(
-        round(semantic_score, 2)
-    ),
+                "resume": filename,
 
-    "skill_score": float(
-        round(skill_match_score, 2)
-    ),
+                "semantic_score": float(
+                    round(semantic_score, 2)
+                ),
 
-    "final_score": float(
-        round(final_score, 2)
-    ),
+                "skill_score": float(
+                    round(skill_match_score, 2)
+                ),
 
-    "skills": resume_skills,
+                "final_score": float(
+                    round(final_score, 2)
+                ),
 
-    "matched_skills": list(
-        matched_skills
-    )
-})
+                "skills": resume_skills,
+
+                "matched_skills": list(
+                    matched_skills
+                )
+            })
 
     ranked_results = sorted(
         results,
@@ -115,6 +142,7 @@ def analyze_resumes():
     )
 
     return jsonify(ranked_results)
+
 
 if __name__ == "__main__":
     app.run(debug=True)
