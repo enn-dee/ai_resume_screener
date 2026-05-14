@@ -1,5 +1,7 @@
 import os
 
+from flask import Flask, jsonify
+
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -7,107 +9,112 @@ from utils.pdf_extractor import extract_text_from_pdf
 from utils.text_cleaner import clean_text
 from utils.skill_extractor import extract_skills
 
+from flask import Flask
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
-job_description = """
-Looking for a Python developer with:
-- Flask
-- REST APIs
-- SQL
-- Backend development
-- Git experience
-"""
+app = Flask(__name__)
 
-cleaned_job = clean_text(job_description)
+@app.route("/")
+def home():
+    return "AI Resume Screener API Running"
 
-job_skills = extract_skills(cleaned_job)
+@app.route("/analyze")
+def analyze_resumes():
 
-# Generate JD embedding
-job_embedding = model.encode([cleaned_job])
+    job_description = """
+    Looking for a Python developer with:
+    Flask, SQL, REST APIs, Git
+    """
 
-resume_folder = "resumes"
+    cleaned_job = clean_text(job_description)
 
-results = []
+    job_skills = extract_skills(cleaned_job)
 
-for file_name in os.listdir(resume_folder):
+    job_embedding = model.encode([cleaned_job])
 
-    if file_name.endswith(".pdf"):
+    resume_folder = "resumes"
 
-        pdf_path = os.path.join(resume_folder, file_name)
+    results = []
 
-        print(f"\nProcessing: {file_name}")
+    for file_name in os.listdir(resume_folder):
 
-        resume_text = extract_text_from_pdf(pdf_path)
+        if file_name.endswith(".pdf"):
 
-        cleaned_resume = clean_text(resume_text)
+            pdf_path = os.path.join(
+                resume_folder,
+                file_name
+            )
 
-        resume_skills = extract_skills(cleaned_resume)
+            resume_text = extract_text_from_pdf(
+                pdf_path
+            )
 
-        # Generate embedding
-        resume_embedding = model.encode([cleaned_resume])
+            cleaned_resume = clean_text(
+                resume_text
+            )
 
-        similarity = cosine_similarity(
-            job_embedding,
-            resume_embedding
-        )
+            resume_skills = extract_skills(
+                cleaned_resume
+            )
 
-        semantic_score = similarity[0][0] * 100
+            resume_embedding = model.encode(
+                [cleaned_resume]
+            )
 
-        matched_skills = set(job_skills).intersection(
-            set(resume_skills)
-        )
+            similarity = cosine_similarity(
+                job_embedding,
+                resume_embedding
+            )
 
-        skill_match_score = (
-            len(matched_skills) / len(job_skills)
-        ) * 100 if job_skills else 0
+            semantic_score = (
+                similarity[0][0] * 100
+            )
 
-        final_score = (
-            (0.7 * semantic_score)
-            +
-            (0.3 * skill_match_score)
-        )
+            matched_skills = set(
+                job_skills
+            ).intersection(set(resume_skills))
 
-        results.append({
-            "resume": file_name,
-            "semantic_score": semantic_score,
-            "skill_score": skill_match_score,
-            "final_score": final_score,
-            "skills": resume_skills,
-            "matched_skills": list(matched_skills)
-        })
+            skill_match_score = (
+                len(matched_skills)
+                /
+                len(job_skills)
+            ) * 100 if job_skills else 0
 
-ranked_results = sorted(
-    results,
-    key=lambda x: x["final_score"],
-    reverse=True
-)
+            final_score = (
+                (0.7 * semantic_score)
+                +
+                (0.3 * skill_match_score)
+            )
 
-print("\n===== RANKED CANDIDATES =====\n")
+            results.append({
+    "resume": file_name,
 
-for rank, result in enumerate(ranked_results, start=1):
+    "semantic_score": float(
+        round(semantic_score, 2)
+    ),
 
-    print(f"{rank}. {result['resume']}")
+    "skill_score": float(
+        round(skill_match_score, 2)
+    ),
 
-    print(
-        f"Semantic Score: "
-        f"{result['semantic_score']:.2f}%"
+    "final_score": float(
+        round(final_score, 2)
+    ),
+
+    "skills": resume_skills,
+
+    "matched_skills": list(
+        matched_skills
+    )
+})
+
+    ranked_results = sorted(
+        results,
+        key=lambda x: x["final_score"],
+        reverse=True
     )
 
-    print(
-        f"Skill Score: "
-        f"{result['skill_score']:.2f}%"
-    )
+    return jsonify(ranked_results)
 
-    print(
-        f"Final Score: "
-        f"{result['final_score']:.2f}%"
-    )
-
-    print(f"Skills Found: {result['skills']}")
-
-    print(
-        f"Matched Skills: "
-        f"{result['matched_skills']}"
-    )
-
-    print("-" * 50)
+if __name__ == "__main__":
+    app.run(debug=True)
